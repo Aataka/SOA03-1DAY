@@ -1,13 +1,14 @@
 # SOA03-1DAY — EC2 Rightsizing を運用監視の目線で検証する
 
-AWS Skill Builder ラボ「EC2 Instance Rightsizing」を題材に、ラボが省略している**運用要素**を 5 つの仮説として立て、IaC（Terraform）で構築・検証するプロジェクト。検証結果を Zenn 記事化する。
+AWS Skill Builder ラボ「EC2 Instance Rightsizing」を題材に、ラボが省略している**運用要素**を 4 つの仮説として立て、IaC（Terraform）で構築・検証するプロジェクト。検証結果を Zenn 記事化する。
 
-## 検証する5つの仮説
+> 注: 当初の仮説 W（Compute Optimizer）は推奨に最低30時間以上のメトリクス蓄積が必要で、1時間の検証枠では完遂不可のため本プロジェクトの対象外とした（記事側では設計言及に留める）。
+
+## 検証する4つの仮説
 
 | 仮説 | 内容 | 使うサービス |
 |---|---|---|
 | U | 手打ち負荷は簡単だが再現性・安全性に欠ける。再現可能・自動停止付きの仕組みが要る | AWS FIS |
-| W | 手動分析なしでも Compute Optimizer が同じリサイズ結論（ここでは finding=Optimized で追認）に至る | Compute Optimizer |
 | X | 通知を消したアラームは機能しない。検知→通知→対応の経路が要る | SNS / EventBridge |
 | Y | エージェント停止でメモリメトリクスが静かに欠落し、既定設定では発火しない | CloudWatch `treat_missing_data` |
 | V | 複合アラーム(OR)は片方欠損でも他方ALARMならALARM。だが両方欠損は OK に落ちる罠 | CloudWatch 複合アラーム |
@@ -38,15 +39,6 @@ aws fis start-experiment \
 ```
 → CloudWatch ダッシュボードで Web-Server の CPU 上昇を確認。CPU高アラーム発火で**実験が自動停止**することも確認（停止条件の動作）。
 
-### 想定W: Compute Optimizer
-```bash
-aws compute-optimizer update-enrollment-status --status Active
-# 30時間以上のメトリクス蓄積後に取得（1日では出ない可能性が高い）
-aws compute-optimizer get-ec2-instance-recommendations \
-  --query "instanceRecommendations[].{arn:instanceArn,finding:finding}"
-```
-→ 後日 `finding=Optimized`（手動リサイズの追認）をスクショ。
-
 ### 想定X: 通知の到達
 FIS実験 or メモリ負荷でアラームを発火させ、登録メールに通知が届くことを確認。
 
@@ -64,7 +56,6 @@ sudo systemctl stop amazon-cloudwatch-agent
 ## クリーンアップ
 ```bash
 terraform destroy
-aws compute-optimizer update-enrollment-status --status Inactive   # destroy対象外なので明示的に
 ```
 
 ## 注意
