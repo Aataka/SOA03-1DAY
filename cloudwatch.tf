@@ -46,7 +46,7 @@ resource "aws_cloudwatch_metric_alarm" "db_mem_high" {
 # ===== 複合アラーム（想定V: OR の欠損伝播を検証） =====
 resource "aws_cloudwatch_composite_alarm" "web_app" {
   alarm_name = "Web Application: Over Utilized"
-  alarm_rule = "ALARM(${aws_cloudwatch_metric_alarm.db_mem_high.alarm_name}) OR ALARM(${aws_cloudwatch_metric_alarm.web_cpu_high.alarm_name})"
+  alarm_rule = "ALARM(\"${aws_cloudwatch_metric_alarm.db_mem_high.alarm_name}\") OR ALARM(\"${aws_cloudwatch_metric_alarm.web_cpu_high.alarm_name}\")"
 
   alarm_actions = [aws_sns_topic.ops.arn]
   ok_actions    = [aws_sns_topic.ops.arn]

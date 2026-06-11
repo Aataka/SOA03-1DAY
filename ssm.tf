@@ -54,6 +54,9 @@ resource "aws_ssm_association" "install_cwagent" {
     values = ["Web Application"]
   }
 
+  # インストールが実機で成功するまで待つ（configure との競合を防ぐ）
+  wait_for_success_timeout_seconds = 600
+
   depends_on = [aws_instance.web, aws_instance.db]
 }
 
@@ -74,6 +77,9 @@ resource "aws_ssm_association" "configure_cwagent" {
     key    = "tag:Application"
     values = ["Web Application"]
   }
+
+  # 設定適用が成功するまで待つ（メモリメトリクス送信開始を確実にする）
+  wait_for_success_timeout_seconds = 600
 
   depends_on = [aws_ssm_association.install_cwagent]
 }
