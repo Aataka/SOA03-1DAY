@@ -4,14 +4,14 @@ AWS Skill Builder ラボ「EC2 Instance Rightsizing」を題材に、ラボが�
 
 > 注: 当初の仮説 W（Compute Optimizer）は推奨に最低30時間以上のメトリクス蓄積が必要で、1時間の検証枠では完遂不可のため本プロジェクトの対象外とした（記事側では設計言及に留める）。
 
-## 検証する4つの仮説
+## 検証する4つの仮説と結果
 
-| 仮説 | 内容 | 使うサービス |
-|---|---|---|
-| U | 手打ち負荷は簡単だが再現性・安全性に欠ける。再現可能・自動停止付きの仕組みが要る | AWS FIS |
-| X | 通知を消したアラームは機能しない。検知→通知→対応の経路が要る | SNS / EventBridge |
-| Y | エージェント停止でメモリメトリクスが静かに欠落し、既定設定では発火しない | CloudWatch `treat_missing_data` |
-| V | 複合アラーム(OR)は片方欠損でも他方ALARMならALARM。だが両方欠損は OK に落ちる罠 | CloudWatch 複合アラーム |
+| 仮説 | 内容 | 使うサービス | 検証結果 |
+|---|---|---|---|
+| U | 手打ち負荷は再現性・安全性に欠ける。再現可能・自動停止付きの仕組みが要る | AWS FIS | ✅ 実証（CPU 0.5%→100%、実験は所定時間で完了） |
+| X | 通知を消したアラームは機能しない。検知→通知の経路が要る | SNS | ✅ 実証（※メール確認に罠あり→[ハマりどころ](#ハマりどころ実機で踏んだ点)） |
+| Y | エージェント停止でメモリが静かに欠落し、既定設定では発火しない | CloudWatch `treat_missing_data` | ✅ 実証（欠落→ALARMまで約6〜7分） |
+| V | 複合アラーム(OR)は片方欠損でも他方ALARMならALARM。両方欠損はOKに落ちる罠 | CloudWatch 複合アラーム | ✅ V(a)実証 / ⬜ V(b)は設計言及のみ |
 
 ## 前提
 
@@ -25,7 +25,7 @@ cp terraform.tfvars.example terraform.tfvars   # notification_email を自分の
 terraform init
 terraform plan
 terraform apply
-# apply後、SNSの確認メールのリンクを必ず承認すること（未承認だと通知が届かない）
+# apply後、SNS購読の確認が必要（下記ハマりどころ参照。メールのリンク直接クリックは非推奨）
 ```
 
 > ⚠️ コスト注意: t3.medium + r5.large の 2 台が常時起動する。検証が終わったら必ず `terraform destroy`。
@@ -56,7 +56,34 @@ sudo systemctl stop amazon-cloudwatch-agent
 ## クリーンアップ
 ```bash
 terraform destroy
+# 確認: 実行中インスタンス・アラーム・SNSトピックが全て0になればOK
 ```
+
+## ハマりどころ（実機で踏んだ点）
+
+実際に検証して詰まった2点。再現する人向けに残す。
+
+### 1. SNSメール購読が「確認直後」に自動解除される
+確認メールの「Confirm subscription」をクリックすると `Subscription confirmed!` が出るのに、直後に購読が `Deleted` になり通知が届かない。原因は**メール/ブラウザのセキュリティ機構が確認完了ページの unsubscribe リンク（GETで解除される設計）を自動先読み**するため（企業メールだけでなく Gmail でも発生し得る）。
+
+**対策**: メールのリンクを直接クリックせず、**右クリックでURLをコピー → Token を取り出して CLI で承認**する。`--authenticate-on-unsubscribe true` を付けると、解除に AWS 認証が要求され、スキャナのGETでは解除されなくなる。
+```bash
+# 確認メールのURLから Token を抜き出して実行
+aws sns confirm-subscription \
+  --topic-arn arn:aws:sns:<region>:<acct>:SOA03-1DAY-ops-alerts \
+  --token <Token> \
+  --authenticate-on-unsubscribe true
+# ConfirmationWasAuthenticated=true を確認
+```
+
+### 2. CWエージェントの configure が install より先に走って失敗
+新規インスタンスでは `AmazonCloudWatch-ManageAgent`(configure) が `AWS-ConfigureAWSPackage`(install) の実機完了前に実行され、`CloudWatch Agent not installed` で失敗することがある。`depends_on` / `wait_for_success_timeout_seconds` でも実機の実行順は完全には保証されない。
+
+**対策**: configure 関連付けを手動で再実行する。
+```bash
+aws ssm start-associations-once --association-ids <configure-association-id>
+```
+本番では user_data でのインストールや、apply後の収集疎通チェックを運用フローに組み込むのが確実。
 
 ## 注意
 - このリポジトリの Terraform は**自分の検証用 AWS アカウント**で実行する。Skill Builder のラボ環境では指定外サービス（FIS等）でエラーになる可能性がある。
