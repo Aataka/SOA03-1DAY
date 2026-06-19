@@ -8,7 +8,7 @@ AWS Skill Builder ラボ「EC2 Instance Rightsizing」を題材に、ラボが�
 
 | 仮説 | 内容 | 使うサービス | 検証結果 |
 |---|---|---|---|
-| U | 手打ち負荷は再現性・安全性に欠ける。再現可能・自動停止付きの仕組みが要る | AWS FIS | ✅ 実証（CPU 0.5%→100%、実験は所定時間で完了） |
+| U | 手打ち(stress-ng)よりFISが安全に検証できるはず（当初は「再現性」が主理由と想定） | AWS FIS | ⚠️想定を一部修正：固定パラメータならstress-ngも再現可＝再現性はFISの理由にならない。FISの本質は①条件停止(安全弁)②テンプレート再利用③SSM経由でログイン不要。CPU 0.5%→100%、停止条件で自動停止を確認 |
 | X | 通知を消したアラームは機能しない。検知→通知の経路が要る | SNS | ✅ 実証（※メール確認に罠あり→[ハマりどころ](#ハマりどころ実機で踏んだ点)） |
 | Y | エージェント停止でメモリが静かに欠落し、既定設定では発火しない | CloudWatch `treat_missing_data` | ✅ 実証（欠落→ALARMまで約6〜7分） |
 | V | 複合アラーム(OR)は片方欠損でも他方ALARMならALARM。両方欠損はOKに落ちる罠 | CloudWatch 複合アラーム | ✅ V(a)実証 / ⬜ V(b)は設計言及のみ |
@@ -32,7 +32,7 @@ terraform apply
 
 ## 検証手順（Runbook）
 
-### 想定U: FISで再現可能な負荷をかける
+### 想定U: FISで負荷をかける（条件停止つき）
 ```bash
 aws fis start-experiment \
   --experiment-template-id $(terraform output -raw fis_cpu_experiment_template_id)
